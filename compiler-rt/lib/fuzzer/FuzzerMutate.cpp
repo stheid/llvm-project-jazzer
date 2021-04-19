@@ -487,8 +487,13 @@ void MutationDispatcher::RecordSuccessfulMutationSequence() {
     DE->IncSuccessCount();
     assert(DE->GetW().size());
     // Linear search is fine here as this happens seldom.
-    if (!PersistentAutoDictionary.ContainsWord(DE->GetW()))
-      PersistentAutoDictionary.push_back({DE->GetW(), {1, DE->GetW().size()}});
+    if (!PersistentAutoDictionary.ContainsWord(DE->GetW())) {
+      PositionHint hint =
+          DE->HasPositionHint()
+              ? DE->GetPositionHint()
+              : PositionHint{std::numeric_limits<size_t>::max()};
+      PersistentAutoDictionary.push_back({DE->GetW(), hint});
+    }
   }
 }
 
