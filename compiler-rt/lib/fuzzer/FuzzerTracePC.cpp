@@ -345,29 +345,22 @@ void TracePC::PrintCoverage(bool PrintAllCounters) {
 
 ATTRIBUTE_NO_SANITIZE_ALL
 void TracePC::AddValueForMemcmp(void *caller_pc, const void *s1, const void *s2,
-                                size_t Len1, size_t Len2, bool StopAtZero) {
-  if (!Len1 || !Len2)
-    return;
-  Len1 = std::min(Len1, Word::GetMaxSize());
-  Len2 = std::min(Len2, Word::GetMaxSize());
-  size_t Len = std::min(Len1, Len2);
+                                size_t n, bool StopAtZero) {
+  if (!n) return;
+  size_t Len = std::min(n, Word::GetMaxSize());
   const uint8_t *A1 = reinterpret_cast<const uint8_t *>(s1);
   const uint8_t *A2 = reinterpret_cast<const uint8_t *>(s2);
   uint8_t B1[Word::kMaxSize];
   uint8_t B2[Word::kMaxSize];
   // Copy the data into locals in this non-msan-instrumented function
   // to avoid msan complaining further.
-  size_t Hash = 0; // Compute some simple hash of both strings.
+  size_t Hash = 0;  // Compute some simple hash of both strings.
   for (size_t i = 0; i < Len; i++) {
     B1[i] = A1[i];
     B2[i] = A2[i];
     size_t T = B1[i];
     Hash ^= (T << 8) | B2[i];
   }
-  for (size_t i = Len; i < Len1; i++)
-    B1[i] = A1[i];
-  for (size_t i = Len; i < Len2; i++)
-    B2[i] = A2[i];
   size_t I = 0;
   uint8_t HammingDistance = 0;
   for (; I < Len; I++) {
@@ -380,7 +373,7 @@ void TracePC::AddValueForMemcmp(void *caller_pc, const void *s1, const void *s2,
   size_t Idx = (PC & 4095) | (I << 12);
   Idx += HammingDistance;
   ValueProfileMap.AddValue(Idx);
-  TORCW.Insert(Idx ^ Hash, Word(B1, Len1), Word(B2, Len2));
+  TORCW.Insert(Idx ^ Hash, Word(B1, Len), Word(B2, Len));
 }
 
 template <class T>
@@ -620,26 +613,13 @@ void __sanitizer_cov_trace_gep(uintptr_t Idx) {
   fuzzer::TPC.HandleCmp(PC, Idx, (uintptr_t)0);
 }
 
-ATTRIBUTE_INTERFACE ATTRIBUTE_NO_SANITIZE_MEMORY void
-__sanitizer_weak_hook_compare_bytes(void *caller_pc, const void *s1,
-                                    const void *s2, size_t n1, size_t n2,
-                                    int result) {
-  if (!fuzzer::RunningUserCallback)
-    return;
-  if (result == 0)
-    return; // No reason to mutate.
-  if (n1 <= 1 || n2 <= 1)
-    return; // Not interesting.
-  fuzzer::TPC.AddValueForMemcmp(caller_pc, s1, s2, n1, n2, false);
-}
-
 ATTRIBUTE_INTERFACE ATTRIBUTE_NO_SANITIZE_MEMORY
 void __sanitizer_weak_hook_memcmp(void *caller_pc, const void *s1,
                                   const void *s2, size_t n, int result) {
   if (!fuzzer::RunningUserCallback) return;
   if (result == 0) return;  // No reason to mutate.
   if (n <= 1) return;  // Not interesting.
-  fuzzer::TPC.AddValueForMemcmp(caller_pc, s1, s2, n, n, /*StopAtZero*/ false);
+  fuzzer::TPC.AddValueForMemcmp(caller_pc, s1, s2, n, /*StopAtZero*/false);
 }
 
 ATTRIBUTE_INTERFACE ATTRIBUTE_NO_SANITIZE_MEMORY
@@ -652,7 +632,7 @@ void __sanitizer_weak_hook_strncmp(void *caller_pc, const char *s1,
   n = std::min(n, Len1);
   n = std::min(n, Len2);
   if (n <= 1) return;  // Not interesting.
-  fuzzer::TPC.AddValueForMemcmp(caller_pc, s1, s2, n, n, /*StopAtZero*/ true);
+  fuzzer::TPC.AddValueForMemcmp(caller_pc, s1, s2, n, /*StopAtZero*/true);
 }
 
 ATTRIBUTE_INTERFACE ATTRIBUTE_NO_SANITIZE_MEMORY
@@ -662,7 +642,7 @@ void __sanitizer_weak_hook_strcmp(void *caller_pc, const char *s1,
   if (result == 0) return;  // No reason to mutate.
   size_t N = fuzzer::InternalStrnlen2(s1, s2);
   if (N <= 1) return;  // Not interesting.
-  fuzzer::TPC.AddValueForMemcmp(caller_pc, s1, s2, N, N, /*StopAtZero*/ true);
+  fuzzer::TPC.AddValueForMemcmp(caller_pc, s1, s2, N, /*StopAtZero*/true);
 }
 
 ATTRIBUTE_INTERFACE ATTRIBUTE_NO_SANITIZE_MEMORY

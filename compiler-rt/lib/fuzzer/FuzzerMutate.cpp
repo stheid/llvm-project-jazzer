@@ -184,27 +184,21 @@ size_t MutationDispatcher::ApplyDictionaryEntry(uint8_t *Data, size_t Size,
                                                 size_t MaxSize,
                                                 DictionaryEntry &DE) {
   const Word &W = DE.GetW();
-  bool UsePositionHint =
-      DE.HasPositionHint() &&
-      DE.GetPositionHint().Idx + DE.GetPositionHint().Size < Size &&
-      Rand.RandBool();
-  // Either insert W or overwrite some bytes with it using a size hint if
-  // possible.
-  size_t HintSize =
-      Rand.RandBool()
-          ? 0
-          : (UsePositionHint ? DE.GetPositionHint().Size : W.size());
-  if (HintSize > Size)
-    return 0;
-  size_t Idx =
-      UsePositionHint ? DE.GetPositionHint().Idx : Rand(Size + 1 - HintSize);
-  if (Size + W.size() - HintSize > MaxSize)
-    return 0;
-  // Overwrite HintSize bytes at Idx with W (HintSize == 0 corresponds to
-  // insertion).
-  memmove(Data + Idx + W.size(), Data + Idx + HintSize, Size - Idx - HintSize);
-  memcpy(Data + Idx, W.data(), W.size());
-  return Size + W.size() - HintSize;
+  bool UsePositionHint = DE.HasPositionHint() &&
+                         DE.GetPositionHint() + W.size() < Size &&
+                         Rand.RandBool();
+  if (Rand.RandBool()) {  // Insert W.
+    if (Size + W.size() > MaxSize) return 0;
+    size_t Idx = UsePositionHint ? DE.GetPositionHint() : Rand(Size + 1);
+    memmove(Data + Idx + W.size(), Data + Idx, Size - Idx);
+    memcpy(Data + Idx, W.data(), W.size());
+    Size += W.size();
+  } else {  // Overwrite some bytes with W.
+    if (W.size() > Size) return 0;
+    size_t Idx = UsePositionHint ? DE.GetPositionHint() : Rand(Size - W.size());
+    memcpy(Data + Idx, W.data(), W.size());
+  }
+  return Size;
 }
 
 // Somewhere in the past we have observed a comparison instructions
@@ -214,31 +208,28 @@ size_t MutationDispatcher::ApplyDictionaryEntry(uint8_t *Data, size_t Size,
 // input and if it succeeds it creates a DE with a position hint.
 // Otherwise it creates a DE with one of the arguments w/o a position hint.
 DictionaryEntry MutationDispatcher::MakeDictionaryEntryFromCMP(
-    const void *Arg1, const void *Arg2, const void *Arg1Mutation,
-    const void *Arg2Mutation, size_t Arg1Size, size_t Arg2Size,
-    const uint8_t *Data, size_t Size) {
+    const void *Arg1, const void *Arg2,
+    const void *Arg1Mutation, const void *Arg2Mutation,
+    size_t ArgSize, const uint8_t *Data,
+    size_t Size) {
   bool HandleFirst = Rand.RandBool();
   const void *ExistingBytes, *DesiredBytes;
-  size_t ExistingSize, DesiredSize;
   Word W;
   const uint8_t *End = Data + Size;
   for (int Arg = 0; Arg < 2; Arg++) {
     ExistingBytes = HandleFirst ? Arg1 : Arg2;
-    ExistingSize = HandleFirst ? Arg1Size : Arg2Size;
     DesiredBytes = HandleFirst ? Arg2Mutation : Arg1Mutation;
-    DesiredSize = HandleFirst ? Arg2Size : Arg1Size;
     HandleFirst = !HandleFirst;
-    W.Set(reinterpret_cast<const uint8_t *>(DesiredBytes), DesiredSize);
+    W.Set(reinterpret_cast<const uint8_t*>(DesiredBytes), ArgSize);
     const size_t kMaxNumPositions = 8;
-    PositionHint Positions[kMaxNumPositions];
+    size_t Positions[kMaxNumPositions];
     size_t NumPositions = 0;
     for (const uint8_t *Cur = Data;
          Cur < End && NumPositions < kMaxNumPositions; Cur++) {
-      Cur = (const uint8_t *)SearchMemory(Cur, End - Cur, ExistingBytes,
-                                          ExistingSize);
+      Cur =
+          (const uint8_t *)SearchMemory(Cur, End - Cur, ExistingBytes, ArgSize);
       if (!Cur) break;
-      Positions[NumPositions++] = {static_cast<size_t>(Cur - Data),
-                                   ExistingSize};
+      Positions[NumPositions++] = Cur - Data;
     }
     if (!NumPositions) continue;
     return DictionaryEntry(W, Positions[Rand(NumPositions)]);
@@ -246,6 +237,7 @@ DictionaryEntry MutationDispatcher::MakeDictionaryEntryFromCMP(
   DictionaryEntry DE(W);
   return DE;
 }
+
 
 template <class T>
 DictionaryEntry MutationDispatcher::MakeDictionaryEntryFromCMP(
@@ -255,14 +247,13 @@ DictionaryEntry MutationDispatcher::MakeDictionaryEntryFromCMP(
   T Arg1Mutation = static_cast<T>(Arg1 + Rand(-1, 1));
   T Arg2Mutation = static_cast<T>(Arg2 + Rand(-1, 1));
   return MakeDictionaryEntryFromCMP(&Arg1, &Arg2, &Arg1Mutation, &Arg2Mutation,
-                                    sizeof(Arg1), sizeof(Arg2), Data, Size);
+                                    sizeof(Arg1), Data, Size);
 }
 
 DictionaryEntry MutationDispatcher::MakeDictionaryEntryFromCMP(
     const Word &Arg1, const Word &Arg2, const uint8_t *Data, size_t Size) {
   return MakeDictionaryEntryFromCMP(Arg1.data(), Arg2.data(), Arg1.data(),
-                                    Arg2.data(), Arg1.size(), Arg2.size(), Data,
-                                    Size);
+                                    Arg2.data(), Arg1.size(), Data, Size);
 }
 
 size_t MutationDispatcher::Mutate_AddWordFromTORC(
@@ -488,7 +479,7 @@ void MutationDispatcher::RecordSuccessfulMutationSequence() {
     assert(DE->GetW().size());
     // Linear search is fine here as this happens seldom.
     if (!PersistentAutoDictionary.ContainsWord(DE->GetW()))
-      PersistentAutoDictionary.push_back({DE->GetW(), {1, DE->GetW().size()}});
+      PersistentAutoDictionary.push_back({DE->GetW(), 1});
   }
 }
 
@@ -598,7 +589,7 @@ size_t MutationDispatcher::MutateWithMask(uint8_t *Data, size_t Size,
 
 void MutationDispatcher::AddWordToManualDictionary(const Word &W) {
   ManualDictionary.push_back(
-      {W, PositionHint{std::numeric_limits<size_t>::max(), W.size()}});
+      {W, std::numeric_limits<size_t>::max()});
 }
 
 }  // namespace fuzzer
