@@ -57,16 +57,16 @@ class DictionaryEntry {
  public:
   DictionaryEntry() {}
   DictionaryEntry(Word W) : W(W) {}
-  DictionaryEntry(Word W, PositionHint PositionHint)
-      : W(W), PositionHint(PositionHint) {}
+  DictionaryEntry(Word W, PositionHint Hint)
+      : W(W), Hint(Hint) {}
   const Word &GetW() const { return W; }
 
   bool HasPositionHint() const {
-    return PositionHint.Idx != std::numeric_limits<size_t>::max();
+    return Hint.Idx != std::numeric_limits<size_t>::max();
   }
   PositionHint GetPositionHint() const {
     assert(HasPositionHint());
-    return PositionHint;
+    return Hint;
   }
   void IncUseCount() { UseCount++; }
   void IncSuccessCount() { SuccessCount++; }
@@ -83,7 +83,7 @@ class DictionaryEntry {
 
 private:
   Word W;
-  PositionHint PositionHint = {std::numeric_limits<size_t>::max(), 0};
+  PositionHint Hint = {std::numeric_limits<size_t>::max(), 0};
   size_t UseCount = 0;
   size_t SuccessCount = 0;
 };
