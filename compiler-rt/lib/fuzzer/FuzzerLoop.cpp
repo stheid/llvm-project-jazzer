@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "FuzzerCorpus.h"
+#include "FuzzerDefs.h"
 #include "FuzzerIO.h"
 #include "FuzzerInternal.h"
 #include "FuzzerMutate.h"
@@ -20,6 +21,8 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <string>
+#include <vector>
 
 #if defined(__has_include)
 #if __has_include(<sanitizer / lsan_interface.h>)
@@ -154,13 +157,13 @@ Fuzzer::Fuzzer(UserCallback CB, InputCorpus &Corpus, MutationDispatcher &MD,
   if (!Options.OutputCorpus.empty() && Options.ReloadIntervalSec)
     EpochOfLastReadOfOutputCorpus = GetEpoch(Options.OutputCorpus);
   MaxInputLen = MaxMutationLen = Options.MaxLen;
-  TmpMaxMutationLen = 0;  // Will be set once we load the corpus.
+  TmpMaxMutationLen = 0; // Will be set once we load the corpus.
   AllocateCurrentUnitData();
   CurrentUnitSize = 0;
   memset(BaseSha1, 0, sizeof(BaseSha1));
 }
 
-Fuzzer::~Fuzzer() {}
+Fuzzer::~Fuzzer() { F = nullptr;}
 
 void Fuzzer::AllocateCurrentUnitData() {
   if (CurrentUnitData || MaxInputLen == 0)
@@ -255,7 +258,8 @@ void Fuzzer::ExitCallback() {
 }
 
 void Fuzzer::MaybeExitGracefully() {
-  if (!F->GracefulExitRequested) return;
+  if (!F->GracefulExitRequested)
+    return;
   Printf("==%lu== INFO: libFuzzer: exiting as requested\n", GetPid());
   RmDirRecursive(TempPath("FuzzWithFork", ".dir"));
   F->PrintFinalStats();
@@ -318,6 +322,24 @@ void Fuzzer::RssLimitCallback() {
   Printf("SUMMARY: libFuzzer: out-of-memory\n");
   PrintFinalStats();
   _Exit(Options.OOMExitCode); // Stop right now.
+}
+
+std::string Fuzzer::PrintOracleStats() {
+  static size_t OldCoverage = 0;
+  static size_t OldFeatures = 0;
+  std::string Out = "";
+  if (size_t N = TPC.GetTotalPCCoverage()) {
+    Out.append(" cov: " + std::to_string(N) +
+               " new_cov: " + std::to_string(N - OldCoverage));
+    OldCoverage = N;
+  }
+  if (size_t N = Corpus.NumFeatures()) {
+    Out.append(" ft: " + std::to_string(N) +
+               " new_ft: " + std::to_string(N - OldFeatures));
+    OldFeatures = N;
+  }
+  Out.append("\n");
+  return Out;
 }
 
 void Fuzzer::PrintStats(const char *Where, const char *End, size_t Units,
@@ -458,7 +480,8 @@ void Fuzzer::PrintPulseAndReportSlowInput(const uint8_t *Data, size_t Size) {
 static void WriteFeatureSetToFile(const std::string &FeaturesDir,
                                   const std::string &FileName,
                                   const Vector<uint32_t> &FeatureSet) {
-  if (FeaturesDir.empty() || FeatureSet.empty()) return;
+  if (FeaturesDir.empty() || FeatureSet.empty())
+    return;
   WriteToFile(reinterpret_cast<const uint8_t *>(FeatureSet.data()),
               FeatureSet.size() * sizeof(FeatureSet[0]),
               DirPlusFile(FeaturesDir, FileName));
@@ -467,7 +490,8 @@ static void WriteFeatureSetToFile(const std::string &FeaturesDir,
 static void RenameFeatureSetFile(const std::string &FeaturesDir,
                                  const std::string &OldFile,
                                  const std::string &NewFile) {
-  if (FeaturesDir.empty()) return;
+  if (FeaturesDir.empty())
+    return;
   RenameFile(DirPlusFile(FeaturesDir, OldFile),
              DirPlusFile(FeaturesDir, NewFile));
 }
@@ -712,7 +736,7 @@ void Fuzzer::TryDetectingAMemoryLeak(const uint8_t *Data, size_t Size,
   }
 }
 
-void Fuzzer::MutateAndTestOne() {
+std::vector<std::string> Fuzzer::MutateAndTestOne() {
   MD.StartMutationSequence();
 
   auto &II = Corpus.ChooseUnitToMutate(MD.GetRand());
@@ -733,7 +757,7 @@ void Fuzzer::MutateAndTestOne() {
   size_t CurrentMaxMutationLen =
       Min(MaxMutationLen, Max(U.size(), TmpMaxMutationLen));
   assert(CurrentMaxMutationLen > 0);
-
+  std::vector<std::string> coverageCounters;
   for (int i = 0; i < Options.MutateDepth; i++) {
     if (TotalNumberOfRuns >= Options.MaxNumberOfRuns)
       break;
@@ -756,17 +780,19 @@ void Fuzzer::MutateAndTestOne() {
     bool FoundUniqFeatures = false;
     bool NewCov = RunOne(CurrentUnitData, Size, /*MayDeleteFile=*/true, &II,
                          /*ForceAddToCorpus*/ false, &FoundUniqFeatures);
+    coverageCounters.push_back(TPC.GetCoverageCounters());
     TryDetectingAMemoryLeak(CurrentUnitData, Size,
                             /*DuringInitialCorpusExecution*/ false);
     if (NewCov) {
       ReportNewCoverage(&II, {CurrentUnitData, CurrentUnitData + Size});
-      break;  // We will mutate this input more in the next rounds.
+      break; // We will mutate this input more in the next rounds.
     }
     if (Options.ReduceDepth && !FoundUniqFeatures)
       break;
   }
 
   II.NeedsEnergyUpdate = true;
+  return coverageCounters;
 }
 
 void Fuzzer::PurgeAllocator() {
@@ -784,7 +810,8 @@ void Fuzzer::PurgeAllocator() {
   LastAllocatorPurgeAttemptTime = system_clock::now();
 }
 
-void Fuzzer::ReadAndExecuteSeedCorpora(Vector<SizedFile> &CorporaFiles) {
+std::vector<std::string> Fuzzer::ReadAndExecuteSeedCorpora(Vector<SizedFile> &CorporaFiles) {
+  std::vector<std::string> coverageCounters;
   const size_t kMaxSaneLen = 1 << 20;
   const size_t kMinDefaultLen = 4096;
   size_t MaxSize = 0;
@@ -807,6 +834,7 @@ void Fuzzer::ReadAndExecuteSeedCorpora(Vector<SizedFile> &CorporaFiles) {
     Printf("INFO: A corpus is not provided, starting from an empty corpus\n");
     Unit U({'\n'}); // Valid ASCII input.
     RunOne(U.data(), U.size());
+    coverageCounters.push_back(TPC.GetCoverageCounters());
   } else {
     Printf("INFO: seed corpus: files: %zd min: %zdb max: %zdb total: %zdb"
            " rss: %zdMb\n",
@@ -826,6 +854,7 @@ void Fuzzer::ReadAndExecuteSeedCorpora(Vector<SizedFile> &CorporaFiles) {
       RunOne(U.data(), U.size(), /*MayDeleteFile*/ false, /*II*/ nullptr,
              /*ForceAddToCorpus*/ Options.KeepSeed,
              /*FoundUniqFeatures*/ nullptr);
+      coverageCounters.push_back(TPC.GetCoverageCounters());
       CheckExitOnSrcPosOrItem();
       TryDetectingAMemoryLeak(U.data(), U.size(),
                               /*DuringInitialCorpusExecution*/ true);
@@ -847,22 +876,26 @@ void Fuzzer::ReadAndExecuteSeedCorpora(Vector<SizedFile> &CorporaFiles) {
            "Is the code instrumented for coverage? Exiting.\n");
     exit(1);
   }
+
+  return coverageCounters;
 }
 
-void Fuzzer::Loop(Vector<SizedFile> &CorporaFiles) {
+std::vector<std::string> Fuzzer::Loop(Vector<SizedFile> &CorporaFiles) {
+  std::vector<std::string> allCoverages;
   auto FocusFunctionOrAuto = Options.FocusFunction;
   DFT.Init(Options.DataFlowTrace, &FocusFunctionOrAuto, CorporaFiles,
            MD.GetRand());
   TPC.SetFocusFunction(FocusFunctionOrAuto);
-  ReadAndExecuteSeedCorpora(CorporaFiles);
-  DFT.Clear();  // No need for DFT any more.
+
+  auto InitialCoverages = ReadAndExecuteSeedCorpora(CorporaFiles);
+  std::copy(InitialCoverages.begin(), InitialCoverages.end(), std::back_inserter(allCoverages));
+  DFT.Clear(); // No need for DFT any more.
   TPC.SetPrintNewPCs(Options.PrintNewCovPcs);
   TPC.SetPrintNewFuncs(Options.PrintNewCovFuncs);
   system_clock::time_point LastCorpusReload = system_clock::now();
 
   TmpMaxMutationLen =
       Min(MaxMutationLen, Max(size_t(4), Corpus.MaxInputSize()));
-
   while (true) {
     auto Now = system_clock::now();
     if (!Options.StopFile.empty() &&
@@ -892,13 +925,16 @@ void Fuzzer::Loop(Vector<SizedFile> &CorporaFiles) {
     }
 
     // Perform several mutations and runs.
-    MutateAndTestOne();
+    std::vector<std::string> NewCoverages = MutateAndTestOne();
+    std::copy(NewCoverages.begin(), NewCoverages.end(), std::back_inserter(allCoverages));
 
     PurgeAllocator();
   }
 
   PrintStats("DONE  ", "\n");
   MD.PrintRecommendedDictionary();
+
+  return allCoverages;
 }
 
 void Fuzzer::MinimizeCrashLoop(const Unit &U) {
@@ -922,8 +958,8 @@ void Fuzzer::MinimizeCrashLoop(const Unit &U) {
 
 extern "C" {
 
-ATTRIBUTE_INTERFACE size_t
-LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize) {
+ATTRIBUTE_INTERFACE size_t LLVMFuzzerMutate(uint8_t *Data, size_t Size,
+                                            size_t MaxSize) {
   assert(fuzzer::F);
   return fuzzer::F->GetMD().DefaultMutate(Data, Size, MaxSize);
 }

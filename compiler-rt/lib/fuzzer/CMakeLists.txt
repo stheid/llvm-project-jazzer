@@ -1,50 +1,52 @@
 set(LIBFUZZER_SOURCES
-  FuzzerCrossOver.cpp
-  FuzzerDataFlowTrace.cpp
-  FuzzerDriver.cpp
-  FuzzerExtFunctionsDlsym.cpp
-  FuzzerExtFunctionsWeak.cpp
-  FuzzerExtFunctionsWindows.cpp
-  FuzzerExtraCounters.cpp
-  FuzzerFork.cpp
-  FuzzerIO.cpp
-  FuzzerIOPosix.cpp
-  FuzzerIOWindows.cpp
-  FuzzerLoop.cpp
-  FuzzerMerge.cpp
-  FuzzerMutate.cpp
-  FuzzerSHA1.cpp
-  FuzzerTracePC.cpp
-  FuzzerUtil.cpp
-  FuzzerUtilDarwin.cpp
-  FuzzerUtilFuchsia.cpp
-  FuzzerUtilLinux.cpp
-  FuzzerUtilPosix.cpp
-  FuzzerUtilWindows.cpp)
+        FuzzerCrossOver.cpp
+        FuzzerDataFlowTrace.cpp
+        FuzzerDriver.cpp
+        FuzzerExtFunctionsDlsym.cpp
+        FuzzerExtFunctionsWeak.cpp
+        FuzzerExtFunctionsWindows.cpp
+        FuzzerExtraCounters.cpp
+        FuzzerFork.cpp
+        FuzzerIO.cpp
+        FuzzerIOPosix.cpp
+        FuzzerIOWindows.cpp
+        FuzzerLoop.cpp
+        FuzzerMerge.cpp
+        FuzzerMutate.cpp
+        FuzzerSHA1.cpp
+        FuzzerTracePC.cpp
+        FuzzerUtil.cpp
+        FuzzerUtilDarwin.cpp
+        FuzzerUtilFuchsia.cpp
+        FuzzerUtilLinux.cpp
+        FuzzerUtilPosix.cpp
+        FuzzerUtilWindows.cpp
+        Socket.cpp)
 
 set(LIBFUZZER_HEADERS
-  FuzzerBuiltins.h
-  FuzzerBuiltinsMsvc.h
-  FuzzerCommand.h
-  FuzzerCorpus.h
-  FuzzerDataFlowTrace.h
-  FuzzerDefs.h
-  FuzzerDictionary.h
-  FuzzerExtFunctions.def
-  FuzzerExtFunctions.h
-  FuzzerFlags.def
-  FuzzerFork.h
-  FuzzerIO.h
-  FuzzerInterface.h
-  FuzzerInternal.h
-  FuzzerMerge.h
-  FuzzerMutate.h
-  FuzzerOptions.h
-  FuzzerRandom.h
-  FuzzerSHA1.h
-  FuzzerTracePC.h
-  FuzzerUtil.h
-  FuzzerValueBitMap.h)
+        FuzzerBuiltins.h
+        FuzzerBuiltinsMsvc.h
+        FuzzerCommand.h
+        FuzzerCorpus.h
+        FuzzerDataFlowTrace.h
+        FuzzerDefs.h
+        FuzzerDictionary.h
+        FuzzerExtFunctions.def
+        FuzzerExtFunctions.h
+        FuzzerFlags.def
+        FuzzerFork.h
+        FuzzerIO.h
+        FuzzerInterface.h
+        FuzzerInternal.h
+        FuzzerMerge.h
+        FuzzerMutate.h
+        FuzzerOptions.h
+        FuzzerRandom.h
+        FuzzerSHA1.h
+        FuzzerTracePC.h
+        FuzzerUtil.h
+        FuzzerValueBitMap.h
+        Socket.h)
 
 include_directories(../../include)
 
@@ -70,36 +72,36 @@ endif()
 append_list_if(COMPILER_RT_HAS_OMIT_FRAME_POINTER_FLAG -fno-omit-frame-pointer LIBFUZZER_CFLAGS)
 
 if (CMAKE_CXX_FLAGS MATCHES "fsanitize-coverage")
-  list(APPEND LIBFUZZER_CFLAGS -fno-sanitize-coverage=trace-pc-guard,edge,trace-cmp,indirect-calls,8bit-counters)
-endif()
+    list(APPEND LIBFUZZER_CFLAGS -fno-sanitize-coverage=trace-pc-guard,edge,trace-cmp,indirect-calls,8bit-counters)
+endif ()
 
-if(MSVC)
-  # Silence warnings by turning off exceptions in MSVC headers and avoid an
-  # error by unecessarily defining thread_local when it isn't even used on
-  # Windows.
-  list(APPEND LIBFUZZER_CFLAGS -D_HAS_EXCEPTIONS=0)
-else()
-  if(NOT HAS_THREAD_LOCAL)
-    list(APPEND LIBFUZZER_CFLAGS -Dthread_local=__thread)
-  endif()
-endif()
+if (MSVC)
+    # Silence warnings by turning off exceptions in MSVC headers and avoid an
+    # error by unecessarily defining thread_local when it isn't even used on
+    # Windows.
+    list(APPEND LIBFUZZER_CFLAGS -D_HAS_EXCEPTIONS=0)
+else ()
+    if (NOT HAS_THREAD_LOCAL)
+        list(APPEND LIBFUZZER_CFLAGS -Dthread_local=__thread)
+    endif ()
+endif ()
 
 add_compiler_rt_component(fuzzer)
 
 add_compiler_rt_object_libraries(RTfuzzer
-  OS ${FUZZER_SUPPORTED_OS}
-  ARCHS ${FUZZER_SUPPORTED_ARCH}
-  SOURCES ${LIBFUZZER_SOURCES}
-  ADDITIONAL_HEADERS ${LIBFUZZER_HEADERS}
-  CFLAGS ${LIBFUZZER_CFLAGS}
-  DEPS ${LIBFUZZER_DEPS})
+        OS ${FUZZER_SUPPORTED_OS}
+        ARCHS ${FUZZER_SUPPORTED_ARCH}
+        SOURCES ${LIBFUZZER_SOURCES}
+        ADDITIONAL_HEADERS ${LIBFUZZER_HEADERS}
+        CFLAGS ${LIBFUZZER_CFLAGS}
+        DEPS ${LIBFUZZER_DEPS})
 
 add_compiler_rt_object_libraries(RTfuzzer_main
-  OS ${FUZZER_SUPPORTED_OS}
-  ARCHS ${FUZZER_SUPPORTED_ARCH}
-  SOURCES FuzzerMain.cpp
-  CFLAGS ${LIBFUZZER_CFLAGS}
-  DEPS ${LIBFUZZER_DEPS})
+        OS ${FUZZER_SUPPORTED_OS}
+        ARCHS ${FUZZER_SUPPORTED_ARCH}
+        SOURCES FuzzerMain.cpp
+        CFLAGS ${LIBFUZZER_CFLAGS}
+        DEPS ${LIBFUZZER_DEPS})
 
 add_compiler_rt_object_libraries(RTfuzzer_interceptors
   OS ${FUZZER_SUPPORTED_OS}
@@ -109,20 +111,20 @@ add_compiler_rt_object_libraries(RTfuzzer_interceptors
   DEPS ${LIBFUZZER_DEPS})
 
 add_compiler_rt_runtime(clang_rt.fuzzer
-  STATIC
-  OS ${FUZZER_SUPPORTED_OS}
-  ARCHS ${FUZZER_SUPPORTED_ARCH}
-  OBJECT_LIBS RTfuzzer RTfuzzer_main
-  CFLAGS ${LIBFUZZER_CFLAGS}
-  PARENT_TARGET fuzzer)
+        STATIC
+        OS ${FUZZER_SUPPORTED_OS}
+        ARCHS ${FUZZER_SUPPORTED_ARCH}
+        OBJECT_LIBS RTfuzzer RTfuzzer_main
+        CFLAGS ${LIBFUZZER_CFLAGS}
+        PARENT_TARGET fuzzer)
 
 add_compiler_rt_runtime(clang_rt.fuzzer_no_main
-  STATIC
-  OS ${FUZZER_SUPPORTED_OS}
-  ARCHS ${FUZZER_SUPPORTED_ARCH}
-  OBJECT_LIBS RTfuzzer
-  CFLAGS ${LIBFUZZER_CFLAGS}
-  PARENT_TARGET fuzzer)
+        STATIC
+        OS ${FUZZER_SUPPORTED_OS}
+        ARCHS ${FUZZER_SUPPORTED_ARCH}
+        OBJECT_LIBS RTfuzzer
+        CFLAGS ${LIBFUZZER_CFLAGS}
+        PARENT_TARGET fuzzer)
 
 add_compiler_rt_runtime(clang_rt.fuzzer_interceptors
   STATIC
@@ -173,6 +175,6 @@ if(OS_NAME MATCHES "Linux|Fuchsia" AND
   endforeach()
 endif()
 
-if(COMPILER_RT_INCLUDE_TESTS)
-  add_subdirectory(tests)
-endif()
+if (COMPILER_RT_INCLUDE_TESTS)
+    add_subdirectory(tests)
+endif ()
