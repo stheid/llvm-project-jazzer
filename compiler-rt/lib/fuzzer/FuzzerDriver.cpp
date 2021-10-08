@@ -19,6 +19,7 @@
 #include "FuzzerPlatform.h"
 #include "FuzzerRandom.h"
 #include "FuzzerTracePC.h"
+#include "Socket.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -27,6 +28,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+// basic file operations
 #include <fstream>
 
 // This function should be present in the libFuzzer so that the client
@@ -231,7 +233,8 @@ static void WorkerThread(const Command &BaseCmd, std::atomic<unsigned> *Counter,
                          unsigned NumJobs, std::atomic<bool> *HasErrors) {
   while (true) {
     unsigned C = (*Counter)++;
-    if (C >= NumJobs) break;
+    if (C >= NumJobs)
+      break;
     std::string Log = "fuzz-" + std::to_string(C) + ".log";
     Command Cmd(BaseCmd);
     Cmd.setOutputFile(Log);
@@ -294,7 +297,8 @@ static int RunInMultipleProcesses(const Vector<std::string> &Args,
   std::thread Pulse(PulseThread);
   Pulse.detach();
   for (unsigned i = 0; i < NumWorkers; i++)
-    V.push_back(std::thread(WorkerThread, std::ref(Cmd), &Counter, NumJobs, &HasErrors));
+    V.push_back(std::thread(WorkerThread, std::ref(Cmd), &Counter, NumJobs,
+                            &HasErrors));
   for (auto &T : V)
     T.join();
   return HasErrors ? 1 : 0;
@@ -330,8 +334,28 @@ int RunOneTest(Fuzzer *F, const char *InputFilePath, size_t MaxLen) {
   return 0;
 }
 
+int RunOneTestOracle(Fuzzer *F, string Input, size_t MaxLen, string &Out) {
+  Unit U(Input.begin(), Input.end());
+  if (MaxLen && MaxLen < U.size())
+    U.resize(MaxLen);
+  F->RunOne(U.data(), U.size());
+  Out = F->PrintOracleStats();
+  return 0;
+}
+
+//int MutateAndRunOneTestOracle(Fuzzer *F, string Input, size_t MaxLen,
+//                              string &Out) {
+//  Unit U(Input.begin(), Input.end());
+//  if (MaxLen && MaxLen < U.size())
+//    U.resize(MaxLen);
+//  F->MutateAndTestOne(U.data(), U.size());
+//  Out = F->PrintOracleStats();
+//  return 0;
+//}
+
 static bool AllInputsAreFiles() {
-  if (Inputs->empty()) return false;
+  if (Inputs->empty())
+    return false;
   for (auto &Path : *Inputs)
     if (!IsFile(Path))
       return false;
@@ -349,10 +373,10 @@ static std::string GetDedupTokenFromCmdOutput(const std::string &S) {
 }
 
 int CleanseCrashInput(const Vector<std::string> &Args,
-                       const FuzzingOptions &Options) {
+                      const FuzzingOptions &Options) {
   if (Inputs->size() != 1 || !Flags.exact_artifact_path) {
     Printf("ERROR: -cleanse_crash should be given one input file and"
-          " -exact_artifact_path\n");
+           " -exact_artifact_path\n");
     exit(1);
   }
   std::string InputFilePath = Inputs->at(0);
@@ -398,7 +422,8 @@ int CleanseCrashInput(const Vector<std::string> &Args,
         }
       }
     }
-    if (!Changed) break;
+    if (!Changed)
+      break;
   }
   return 0;
 }
@@ -531,8 +556,7 @@ void Merge(Fuzzer *F, FuzzingOptions &Options, const Vector<std::string> &Args,
   exit(0);
 }
 
-int AnalyzeDictionary(Fuzzer *F, const Vector<Unit>& Dict,
-                      UnitVector& Corpus) {
+int AnalyzeDictionary(Fuzzer *F, const Vector<Unit> &Dict, UnitVector &Corpus) {
   Printf("Started dictionary minimization (up to %d tests)\n",
          Dict.size() * Corpus.size() * 2);
 
@@ -546,14 +570,13 @@ int AnalyzeDictionary(Fuzzer *F, const Vector<Unit>& Dict,
     // Get coverage for the testcase without modifications.
     F->ExecuteCallback(C.data(), C.size());
     InitialFeatures.clear();
-    TPC.CollectFeatures([&](size_t Feature) {
-      InitialFeatures.push_back(Feature);
-    });
+    TPC.CollectFeatures(
+        [&](size_t Feature) { InitialFeatures.push_back(Feature); });
 
     for (size_t i = 0; i < Dict.size(); ++i) {
       Vector<uint8_t> Data = C;
-      auto StartPos = std::search(Data.begin(), Data.end(),
-                                  Dict[i].begin(), Dict[i].end());
+      auto StartPos =
+          std::search(Data.begin(), Data.end(), Dict[i].begin(), Dict[i].end());
       // Skip dictionary unit, if the testcase does not contain it.
       if (StartPos == Data.end())
         continue;
@@ -565,16 +588,15 @@ int AnalyzeDictionary(Fuzzer *F, const Vector<Unit>& Dict,
         for (auto It = StartPos; It != EndPos; ++It)
           *It ^= 0xFF;
 
-        StartPos = std::search(EndPos, Data.end(),
-                               Dict[i].begin(), Dict[i].end());
+        StartPos =
+            std::search(EndPos, Data.end(), Dict[i].begin(), Dict[i].end());
       }
 
       // Get coverage for testcase with masked occurrences of dictionary unit.
       F->ExecuteCallback(Data.data(), Data.size());
       ModifiedFeatures.clear();
-      TPC.CollectFeatures([&](size_t Feature) {
-        ModifiedFeatures.push_back(Feature);
-      });
+      TPC.CollectFeatures(
+          [&](size_t Feature) { ModifiedFeatures.push_back(Feature); });
 
       if (InitialFeatures == ModifiedFeatures)
         --Scores[i];
@@ -587,7 +609,7 @@ int AnalyzeDictionary(Fuzzer *F, const Vector<Unit>& Dict,
   for (size_t i = 0; i < Dict.size(); ++i) {
     // Dictionary units with positive score are treated as useful ones.
     if (Scores[i] > 0)
-       continue;
+      continue;
 
     Printf("\"");
     PrintASCII(Dict[i].data(), Dict[i].size(), "\"");
@@ -600,7 +622,8 @@ int AnalyzeDictionary(Fuzzer *F, const Vector<Unit>& Dict,
 Vector<std::string> ParseSeedInuts(const char *seed_inputs) {
   // Parse -seed_inputs=file1,file2,... or -seed_inputs=@seed_inputs_file
   Vector<std::string> Files;
-  if (!seed_inputs) return Files;
+  if (!seed_inputs)
+    return Files;
   std::string SeedInputs;
   if (Flags.seed_inputs[0] == '@')
     SeedInputs = FileToString(Flags.seed_inputs + 1); // File contains list.
@@ -620,8 +643,9 @@ Vector<std::string> ParseSeedInuts(const char *seed_inputs) {
   return Files;
 }
 
-static Vector<SizedFile> ReadCorpora(const Vector<std::string> &CorpusDirs,
-    const Vector<std::string> &ExtraSeedFiles) {
+static Vector<SizedFile>
+ReadCorpora(const Vector<std::string> &CorpusDirs,
+            const Vector<std::string> &ExtraSeedFiles) {
   Vector<SizedFile> SizedFiles;
   size_t LastNumFiles = 0;
   for (auto &Dir : CorpusDirs) {
@@ -694,6 +718,7 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
   Options.UseValueProfile = Flags.use_value_profile;
   Options.Shrink = Flags.shrink;
   Options.ReduceInputs = Flags.reduce_inputs;
+  Options.Oracle = Flags.oracle;
   Options.ShuffleAtStartUp = Flags.shuffle;
   Options.PreferSmall = Flags.prefer_small;
   Options.ReloadIntervalSec = Flags.reload;
@@ -797,10 +822,10 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
   if (Flags.collect_data_flow && !Flags.fork && !Flags.merge) {
     if (RunIndividualFiles)
       return CollectDataFlow(Flags.collect_data_flow, Flags.data_flow_trace,
-                        ReadCorpora({}, *Inputs));
+                             ReadCorpora({}, *Inputs));
     else
       return CollectDataFlow(Flags.collect_data_flow, Flags.data_flow_trace,
-                        ReadCorpora(*Inputs, {}));
+                             ReadCorpora(*Inputs, {}));
   }
 
   Random Rand(Seed);
@@ -808,7 +833,7 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
   auto *Corpus = new InputCorpus(Options.OutputCorpus, Entropic);
   auto *F = new Fuzzer(Callback, *Corpus, *MD, Options);
 
-  for (auto &U: Dictionary)
+  for (auto &U : Dictionary)
     if (U.size() <= Word::GetMaxSize())
       MD->AddWordToManualDictionary(Word(U.data(), U.size()));
 
@@ -843,6 +868,39 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
 
   if (Flags.cleanse_crash)
     return CleanseCrashInput(Args, Options);
+
+  if (Flags.oracle) {
+    string Result;
+    string Input;
+    std::ofstream Myfile;
+    std::string FileName = std::tmpnam(nullptr);
+    Options.SaveArtifacts = false;
+
+    Printf("%s: Running inputs from /tmp/libfuzzer.sock\n", ProgName->c_str());
+    Socket *Sock = new Socket("/tmp/libfuzzer.sock");
+    // infinite reading from socket
+    for (dataOut Out; Sock->read(&Out);) {
+      delete F;
+      // totalNumberofRuns gets incremented by ExecuteCallback 2 times, so need to add 2 here!
+      Options.MaxNumberOfRuns = Out.mutRep + 2;
+      auto *F = new Fuzzer(Callback, *Corpus, *MD, Options);
+      Input = Out.fileContents;
+      Printf("#ORACLE (%s)", Input.c_str());
+
+      // write to file
+      Myfile.open(FileName);
+      Myfile << Input.c_str();
+      Myfile.close();
+
+      auto CorporaFiles = ReadCorpora({}, {FileName});
+
+      std::vector<std::string> NewCoverages = F->Loop(CorporaFiles);
+      // Printf("newCoverages: %d\n", NewCoverages.size());
+      Sock->write(NewCoverages);
+    }
+    std::remove(FileName.c_str());
+    exit(EXIT_SUCCESS);
+  }
 
   if (RunIndividualFiles) {
     Options.SaveArtifacts = false;
@@ -882,12 +940,12 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
   }
 
   if (Flags.analyze_dict) {
-    size_t MaxLen = INT_MAX;  // Large max length.
+    size_t MaxLen = INT_MAX; // Large max length.
     UnitVector InitialCorpus;
     for (auto &Inp : *Inputs) {
       Printf("Loading corpus dir: %s\n", Inp.c_str());
-      ReadDirToVectorOfUnits(Inp.c_str(), &InitialCorpus, nullptr,
-                             MaxLen, /*ExitOnError=*/false);
+      ReadDirToVectorOfUnits(Inp.c_str(), &InitialCorpus, nullptr, MaxLen,
+                             /*ExitOnError=*/false);
     }
 
     if (Dictionary.empty() || Inputs->empty()) {
@@ -910,7 +968,7 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
            F->secondsSinceProcessStartUp());
   F->PrintFinalStats();
 
-  exit(0);  // Don't let F destroy itself.
+  exit(0); // Don't let F destroy itself.
 }
 
 extern "C" ATTRIBUTE_INTERFACE int
@@ -922,4 +980,4 @@ LLVMFuzzerRunDriver(int *argc, char ***argv,
 // Storage for global ExternalFunctions object.
 ExternalFunctions *EF = nullptr;
 
-}  // namespace fuzzer
+} // namespace fuzzer
