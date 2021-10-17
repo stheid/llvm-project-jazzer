@@ -140,7 +140,7 @@ public:
   std::string toString() const {
     std::stringstream SS;
     for (auto arg : getArguments())
-      SS << "'" << arg << "' ";
+      SS << arg << " ";
     if (hasOutputFile())
       SS << ">" << getOutputFile() << " ";
     if (isOutAndErrCombined())
