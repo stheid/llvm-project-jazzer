@@ -831,7 +831,6 @@ std::vector<std::string> Fuzzer::ReadAndExecuteSeedCorpora(Vector<SizedFile> &Co
     Printf("INFO: A corpus is not provided, starting from an empty corpus\n");
     Unit U({'\n'}); // Valid ASCII input.
     RunOne(U.data(), U.size());
-    coverageCounters.push_back(TPC.GetCoverageCounters());
   } else {
     Printf("INFO: seed corpus: files: %zd min: %zdb max: %zdb total: %zdb"
            " rss: %zdMb\n",
@@ -854,6 +853,7 @@ std::vector<std::string> Fuzzer::ReadAndExecuteSeedCorpora(Vector<SizedFile> &Co
       CheckExitOnSrcPosOrItem();
       TryDetectingAMemoryLeak(U.data(), U.size(),
                               /*DuringInitialCorpusExecution*/ true);
+      coverageCounters.push_back(TPC.GetCoverageCounters());
     }
   }
 
