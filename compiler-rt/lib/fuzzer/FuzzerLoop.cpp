@@ -847,9 +847,11 @@ std::vector<std::string> Fuzzer::ReadAndExecuteSeedCorpora(Vector<SizedFile> &Co
     for (auto &SF : CorporaFiles) {
       auto U = FileToVector(SF.File, MaxInputLen, /*ExitOnError=*/false);
       assert(U.size() <= MaxInputLen);
-      RunOne(U.data(), U.size(), /*MayDeleteFile*/ false, /*II*/ nullptr,
-             /*ForceAddToCorpus*/ Options.KeepSeed,
-             /*FoundUniqFeatures*/ nullptr);
+      //RunOne(U.data(), U.size(), /*MayDeleteFile*/ false, /*II*/ nullptr,
+      //       /*ForceAddToCorpus*/ Options.KeepSeed,
+      //       /*FoundUniqFeatures*/ nullptr);
+      RunOne(U.data(), U.size(), /*MayDeleteFile=*/true, nullptr,
+            /*ForceAddToCorpus*/ false, nullptr);
       CheckExitOnSrcPosOrItem();
       TryDetectingAMemoryLeak(U.data(), U.size(),
                               /*DuringInitialCorpusExecution*/ true);
@@ -883,6 +885,9 @@ std::vector<std::string> Fuzzer::Loop(Vector<SizedFile> &CorporaFiles) {
            MD.GetRand());
   TPC.SetFocusFunction(FocusFunctionOrAuto);
 
+  /*
+  EXECUTING THE FILE PROVIDED VIA ORACLE
+  */
   auto InitialCoverages = ReadAndExecuteSeedCorpora(CorporaFiles);
   std::copy(InitialCoverages.begin(), InitialCoverages.end(), std::back_inserter(allCoverages));
   DFT.Clear(); // No need for DFT any more.
@@ -921,6 +926,9 @@ std::vector<std::string> Fuzzer::Loop(Vector<SizedFile> &CorporaFiles) {
       TmpMaxMutationLen = MaxMutationLen;
     }
 
+    /*
+    EXECUTING ONE MUTATED INPUT FROM FOR THE MULTIEXECUTION
+    */
     // Perform several mutations and runs.
     std::vector<std::string> NewCoverages = MutateAndTestOne();
     std::copy(NewCoverages.begin(), NewCoverages.end(), std::back_inserter(allCoverages));
