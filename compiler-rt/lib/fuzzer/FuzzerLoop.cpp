@@ -851,7 +851,7 @@ std::vector<std::string> Fuzzer::ReadAndExecuteSeedCorpora(Vector<SizedFile> &Co
       //       /*ForceAddToCorpus*/ Options.KeepSeed,
       //       /*FoundUniqFeatures*/ nullptr);
       RunOne(U.data(), U.size(), /*MayDeleteFile=*/true, nullptr,
-            /*ForceAddToCorpus*/ false, nullptr);
+            /*ForceAddToCorpus*/ true, nullptr);
       CheckExitOnSrcPosOrItem();
       TryDetectingAMemoryLeak(U.data(), U.size(),
                               /*DuringInitialCorpusExecution*/ true);
@@ -930,6 +930,7 @@ std::vector<std::string> Fuzzer::Loop(Vector<SizedFile> &CorporaFiles) {
     EXECUTING ONE MUTATED INPUT FROM FOR THE MULTIEXECUTION
     */
     // Perform several mutations and runs.
+    // new_coverages += MuteAndTestOne()
     std::vector<std::string> NewCoverages = MutateAndTestOne();
     std::copy(NewCoverages.begin(), NewCoverages.end(), std::back_inserter(allCoverages));
 
